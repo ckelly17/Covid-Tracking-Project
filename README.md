@@ -1,4 +1,4 @@
-# COVID TrackingProject
+# The COVID Tracking Project
 
 Collection of code used in course of work for The COVID Tracking Project. Projects include:
 * Long-term care data collection and visualization
