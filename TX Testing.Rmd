@@ -18,6 +18,7 @@ library(lubridate)
 tx_raw <- import("Cumulative Tests over Time by County.xlsx") %>%
   as_tibble(tx_raw)
 
+# clean variable names and reshape to long format
 tx <- tx_raw %>% row_to_names(row_number = 1) %>%
   filter(!is.na(County)) %>%
   filter(!is.na(`Tests Through April 21`)) %>%
@@ -33,17 +34,21 @@ tx <- tx_raw %>% row_to_names(row_number = 1) %>%
   mutate(total_tests = if_else(obs != 1 & is.na(total_tests), lag(total_tests, na.rm = TRUE) , total_tests),
          new_tests = if_else(obs == 1, 0, total_tests - lag(total_tests, na.rm = TRUE)))
 
+# all tests attributed to counties
 tx_counties_PA <- tx %>% filter(County != "TOTAL") %>%
   group_by(date) %>%
   summarize(summed_total = sum(total_tests))
 
+# Total tests reported by the state
 tx_total <- tx %>% filter(County == "TOTAL") %>%
   group_by(date) %>%
   summarize(state_total = sum(total_tests)) 
 
+# compare two totals
 tx_total <- left_join(tx_total, tx_counties_PA, by = "date") %>%
   mutate(match = state_total == summed_total)
 
+# counts match on all but three days
 count(tx_total, match)
 
 export(tx, "texas_testing.csv")
