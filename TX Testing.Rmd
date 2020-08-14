@@ -13,8 +13,7 @@ library(tidyverse)
 library(janitor)
 library(lubridate)
 
-
-setwd("C:/Users/ckelly/Documents/Covid-Personal - Copy/Texas Testing Blog Post")
+# Data from https://dshs.texas.gov/coronavirus/additionaldata.aspx
 
 tx_raw <- import("Cumulative Tests over Time by County.xlsx") %>%
   as_tibble(tx_raw)
