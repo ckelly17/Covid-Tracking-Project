@@ -26,7 +26,7 @@ library(googlesheets4)
 gs4_auth(email = "conor.richard.kelly@gmail.com") # may need to run this directly from the console, not sure why
 
 ## read data from Google Sheets
-ltc2<- read_sheet("https://docs.google.com/spreadsheets/d/1-j5WJ4IrIEdqg_-BaF9_5mw124SbrMKMgl__gFHKrZY/edit?ts=5ef63635#gid=957451839", sheet = "Publish Data", col_types = "c")
+ltc2<- read_sheet("URL", sheet = "Publish Data", col_types = "c")
 
 ## dates
 ltc2$Date <- anydate(as.character(ltc2$Date))
