@@ -1,0 +1,55 @@
+---
+title: "Texas Testing Blog Post"
+author: "Conor Kelly"
+date: "8/12/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(rio)
+library(tidyverse)
+library(janitor)
+library(lubridate)
+
+
+setwd("C:/Users/ckelly/Documents/Covid-Personal - Copy/Texas Testing Blog Post")
+
+tx_raw <- import("Cumulative Tests over Time by County.xlsx") %>%
+  as_tibble(tx_raw)
+
+tx <- tx_raw %>% row_to_names(row_number = 1) %>%
+  filter(!is.na(County)) %>%
+  filter(!is.na(`Tests Through April 21`)) %>%
+  pivot_longer(cols = starts_with("Tests Through"),
+               values_to = "total_tests",
+               names_to = "date") %>%
+  mutate(date = str_replace(date, "Tests Through ", ""),
+         date = paste0(date, ", 2020"),
+         total_tests = (str_replace(total_tests, "--", "")),
+         total_tests = as.numeric(total_tests)) %>%
+  group_by(County) %>%
+  mutate(obs = row_number()) %>%
+  mutate(total_tests = if_else(obs != 1 & is.na(total_tests), lag(total_tests, na.rm = TRUE) , total_tests),
+         new_tests = if_else(obs == 1, 0, total_tests - lag(total_tests, na.rm = TRUE)))
+
+tx_counties_PA <- tx %>% filter(County != "TOTAL") %>%
+  group_by(date) %>%
+  summarize(summed_total = sum(total_tests))
+
+tx_total <- tx %>% filter(County == "TOTAL") %>%
+  group_by(date) %>%
+  summarize(state_total = sum(total_tests)) 
+
+tx_total <- left_join(tx_total, tx_counties_PA, by = "date") %>%
+  mutate(match = state_total == summed_total)
+
+count(tx_total, match)
+
+export(tx, "texas_testing.csv")
+
+
+
+
+```
