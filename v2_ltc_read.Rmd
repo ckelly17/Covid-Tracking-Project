@@ -1,0 +1,212 @@
+
+---
+title: "Long-Term Care Data Setup"
+author: "Conor Kelly"
+---
+
+```{r setup, include=FALSE}
+
+setwd("C:/Users/ckelly/Documents/Covid-Personal - Copy")
+
+## load packages
+
+library(tidyverse)
+library(readxl)
+library(readr)
+library(anytime)
+library(pracma)
+library(lubridate)
+library(googlesheets4)
+
+######################################################
+# LONG TERM CARE
+######################################################
+
+## set google access
+gs4_auth(email = "conor.richard.kelly@gmail.com") # may need to run this directly from the console, not sure why
+
+## read data from Google Sheets
+ltc2<- read_sheet("https://docs.google.com/spreadsheets/d/1-j5WJ4IrIEdqg_-BaF9_5mw124SbrMKMgl__gFHKrZY/edit?ts=5ef63635#gid=957451839", sheet = "Publish Data", col_types = "c")
+
+## dates
+ltc2$Date <- anydate(as.character(ltc2$Date))
+ltc2$data_timestamp <- anydate(as.character(ltc2$data_timestamp))
+ltc2$month <- month(ltc2$Date)
+
+## fill in missing values with 0 and convert to numeric
+ltc2 <- ltc2 %>% mutate_if(is.character, ~replace(., is.na(.), 0))
+for (i in(5:72)) {
+  ltc2[[i]] <- sub(",", "", ltc2[[i]], fixed = TRUE)
+  ltc2[[i]] <- as.numeric(ltc2[[i]])
+}
+
+## add regions
+regions <- read_csv(url("https://raw.githubusercontent.com/cphalpert/census-regions/master/us%20census%20bureau%20regions%20and%20divisions.csv")) %>%
+  rename(State_Abbr = `State Code`)
+ltc2 <- left_join(ltc2, regions, by = "State_Abbr") %>%
+  rename(state = State_Abbr,
+         date = Date)
+
+## add state daily data
+ctp <- read_csv("https://covidtracking.com/api/v1/states/daily.csv") %>%
+  select(date, state, positive, death)
+
+  # deal with dates
+  ctp$date <- as.character(ctp$date)
+  ctp$date <- anydate(ctp$date)
+  
+## merge states to ltc2
+ltc2 <- left_join(ltc2, ctp, by = c("state", "date"))
+
+## add population data
+state_pop <- read_csv("https://raw.githubusercontent.com/COVID19Tracking/associated-data/master/us_census_data/us_census_2018_population_estimates_states.csv") %>%
+  select(state, state_name, population)
+
+ltc2 <- left_join(ltc2, state_pop)
+
+pop65 <- read_csv("https://raw.githubusercontent.com/veltman/state-population-by-age/master/2010.csv") %>%
+  select("State", "60 to 64","65 to 69","70 to 74","75 to 79","80 to 84","85+") %>%
+  mutate(pop65 = `60 to 64` + `65 to 69`+ `70 to 74` + `75 to 79` + `80 to 84` + `85+`) %>%
+  select(State, pop65) %>%
+  rename(state_name = State)
+
+## deal with unmerged states/territories
+ltc2 <- left_join(ltc2, pop65, by = "state_name") %>%
+        mutate(state_name = if_else(state == "PR", "Puerto Rico",
+                                   if_else(state == "AS", "American Samoa",
+                                   if_else(state == "GU", "Guam",
+                                   if_else(state == "MP", "Northern Mariana Islands", state_name)))),
+               State = state_name) %>%
+        relocate(state, State, state_name)
+
+## data setup and variable creation
+ltc2 <- ltc2 %>% 
+  
+  # generate total death numbers for overall and different facility types
+  mutate(totalDeathsAllLTC = DeathRes_ltc	+ ProbDeathRes_ltc + DeathStaff_ltc	+ ProbDeathStaff_ltc + DeathResStaff_ltc	+ ProbDeathResStaff_ltc +
+                             DeathRes_nh	+ ProbDeathRes_nh + DeathStaff_nh	+ ProbDeathStaff_nh + DeathResStaff_nh	+ ProbDeathResStaff_nh +
+                             DeathRes_alf	+ ProbDeathRes_alf + DeathStaff_alf	+ ProbDeathStaff_alf + DeathResStaff_alf	+ ProbDeathResStaff_alf +
+                             DeathRes_other	+ ProbDeathRes_other + DeathStaff_other	+ ProbDeathStaff_other + DeathResStaff_other	+ ProbDeathResStaff_other,
+         
+         # deaths in different facility types
+         totalDeathsNH = DeathRes_nh	+ ProbDeathRes_nh + DeathStaff_nh	+ ProbDeathStaff_nh + DeathResStaff_nh	+ ProbDeathResStaff_nh,
+         totalDeathsALF = DeathRes_alf	+ ProbDeathRes_alf + DeathStaff_alf	+ ProbDeathStaff_alf + DeathResStaff_alf	+ ProbDeathResStaff_alf,
+         totalDeathsLTC = DeathRes_ltc	+ ProbDeathRes_ltc + DeathStaff_ltc	+ ProbDeathStaff_ltc + DeathResStaff_ltc	+ ProbDeathResStaff_ltc,
+         totalDeathsOther = DeathRes_other	+ ProbDeathRes_other + DeathStaff_other	+ ProbDeathStaff_other + DeathResStaff_other	+ ProbDeathResStaff_other,
+ 
+         # positives overall
+         totalPosAllLTC = PosRes_ltc	+ ProbPosRes_ltc + PosStaff_ltc	+ ProbPosStaff_ltc + PosResStaff_ltc	+ ProbPosResStaff_ltc +
+                             PosRes_nh	+ ProbPosRes_nh + PosStaff_nh	+ ProbPosStaff_nh + PosResStaff_nh	+ ProbPosResStaff_nh +
+                             PosRes_alf	+ ProbPosRes_alf + PosStaff_alf	+ ProbPosStaff_alf + PosResStaff_alf	+ ProbPosResStaff_alf +
+                             PosRes_other	+ ProbPosRes_other + PosStaff_other	+ ProbPosStaff_other + PosResStaff_other + ProbPosResStaff_other,
+         
+         # positives in different facility types
+         totalPosNH = PosRes_nh	+ ProbPosRes_nh + PosStaff_nh	+ ProbPosStaff_nh + PosResStaff_nh	+ ProbPosResStaff_nh,
+         totalPosALF = PosRes_alf	+ ProbPosRes_alf + PosStaff_alf	+ ProbPosStaff_alf + PosResStaff_alf	+ ProbPosResStaff_alf,
+         totalPosLTC = PosRes_ltc	+ ProbPosRes_ltc + PosStaff_ltc	+ ProbPosStaff_ltc + PosResStaff_ltc	+ ProbPosResStaff_ltc,
+         totalPosOther = PosRes_other	+ ProbPosRes_other + PosStaff_other	+ ProbPosStaff_other + PosResStaff_other	+ ProbPosResStaff_other,
+         
+         
+         # number of outbreak facilities
+         totalOutbrkFacAllLTC = OutbrkFac_alf + OutbrkFac_ltc + OutbrkFac_nh + OutbrkFac_other,
+         
+         # number tested at outbreak facilities
+         totalTestsConductedOutbrkFac = OutrkFacTestsConducted_ltc + OutrkFacTestsConducted_alf + OutrkFacTestsConducted_nh + OutrkFacTestsConducted_other,
+         
+         # number of residents tested overall
+         totalTestedResidentsAllLTC = TestedRes_ltc + TestedRes_nh + TestedRes_alf + TestedRes_other,
+         
+         # number of staff rested overall
+         totalTestedStaffAllLTC = TestedStaff_ltc + TestedStaff_nh + TestedStaff_alf + TestedStaff_other,
+         
+         # number of tested facilities
+         TotalTestedFacAllLTC = TestedFac_alf + TestedFac_ltc + TestedFac_nh + TestedFac_other) %>%
+         
+         # get counts of increases in positives and deaths
+          group_by(Data_Type, state) %>%
+          arrange(Data_Type, state, date) %>%
+  
+          mutate(obs = row_number(), # counts the observation number within each group, can't lag the first observation
+                 
+                 # all deaths and positives by state (not just LTC)
+                 newDeaths = if_else(obs == 1, death, death - lag(death)),
+                 
+                 # change in deaths
+                 newDeathsAllLTC = if_else(obs == 1, totalDeathsAllLTC, totalDeathsAllLTC - lag(totalDeathsAllLTC)),
+                 newDeathsNH = if_else(obs == 1, totalDeathsNH, totalDeathsNH - lag(totalDeathsNH)),
+                 newDeathsALF = if_else(obs == 1, totalDeathsALF, totalDeathsALF - lag(totalDeathsALF)),
+                 newDeathsLTC = if_else(obs == 1, totalDeathsLTC, totalDeathsLTC - lag(totalDeathsLTC)),
+                 newDeathsOther = if_else(obs == 1, totalDeathsOther, totalDeathsOther - lag(totalDeathsOther)),
+                 
+                 # change in positives                          
+                 newPosAllLTC = if_else(obs == 1, totalPosAllLTC, totalPosAllLTC - lag(totalPosAllLTC)),
+                 newPosNH = if_else(obs == 1, totalPosNH, totalPosNH - lag(totalPosNH)),
+                 newPosALF = if_else(obs == 1, totalPosALF, totalPosALF - lag(totalPosALF)),
+                 newPosLTC = if_else(obs == 1, totalPosLTC, totalPosLTC - lag(totalPosLTC)),
+                 newPosOther = if_else(obs == 1, totalPosOther, totalPosOther - lag(totalPosOther)),
+                 
+                 # change in outbreak facilities
+                 changeOutbrkFac = if_else(obs == 1, totalOutbrkFacAllLTC, totalOutbrkFacAllLTC - lag(totalOutbrkFacAllLTC)),
+                 
+                 # change in residents tested
+                 newTestedResidents = if_else(obs == 1, totalTestedResidentsAllLTC, totalTestedResidentsAllLTC - lag(totalTestedResidentsAllLTC)),
+                 
+                 # change in staff tested
+                 newTestedStaff = if_else(obs == 1, totalTestedStaffAllLTC, totalTestedStaffAllLTC - lag(totalTestedStaffAllLTC)),
+                 
+                 # change in outbreak tested
+                 changeTestsConductedOutbrk = if_else(obs == 1, totalTestsConductedOutbrkFac, totalTestsConductedOutbrkFac - lag(totalTestsConductedOutbrkFac)),
+                 
+                 # change in facilities tested
+                 newTestedFacAllLTC = if_else(obs == 1, TotalTestedFacAllLTC, TotalTestedFacAllLTC - lag(TotalTestedFacAllLTC)),
+                 
+                 # indicator for whether it's the latest date for that state
+                 max_date_ind = if_else(date == max(date), "Yes", "No")) %>%
+                 ungroup() %>%  
+
+                # type of reporting
+                group_by(State) %>%
+                mutate(reports_cumDeaths = if_else(Data_Type == "Cumulative" & totalDeathsAllLTC >= 1, 1,0),
+                       reports_cumDeaths = max(reports_cumDeaths),
+                       
+                       reports_outbrkDeaths = if_else(Data_Type == "Outbreak" & totalDeathsAllLTC >= 1 & reports_cumDeaths != 1, 1,0),
+                       reports_outbrkDeaths = max(reports_outbrkDeaths),
+                       not_reportingDeaths = if_else(reports_cumDeaths != 1 & reports_outbrkDeaths != 1, 1, 0),
+                       DeathReporting = if_else(reports_cumDeaths == 1, "Cumulative", if_else(reports_outbrkDeaths == 1, "Outbreak", "Not Reporting Deaths"))) %>%
+                       
+                       # for states that are only reporting outbreak deaths
+                group_by(State, Data_Type) %>%
+                mutate(max_outbreak_deaths = if_else(Data_Type == "Outbreak", max(totalDeathsAllLTC), 0)) %>%
+                ungroup() %>%
+                group_by(State) %>%
+                mutate(max_outbreak_deaths = max(max_outbreak_deaths),
+                       max_outbreak_deaths = if_else(Data_Type == "Cumulative" & totalDeathsAllLTC >= 1, 0, max_outbreak_deaths),
+                       outbreak_deaths_flag = if_else(max_outbreak_deaths == totalDeathsAllLTC, 1, 0),
+                       
+                       # cumulative total deaths now includes the highest number of outbreak deaths listed if necessary (will need caveat)
+                       totalDeathsAllLTC = if_else(Data_Type == "Cumulative", totalDeathsAllLTC + max_outbreak_deaths, totalDeathsAllLTC))
+                       
+
+## take out missing rows
+ltc2 <- ltc2 %>% filter(!is.na(date))
+
+al <- ltc2 %>%  filter(state == "AL") %>% select(state, date, Data_Type, totalDeathsAllLTC, max_outbreak_deaths, totalDeathsLTC, everything())
+                        
+## write to a new sheet
+sheet_write(ltc2, ss = "https://docs.google.com/spreadsheets/d/1Vgf7fZKPIdgSYFbTv-CoXknfEsGaPSjteqP2b1b9cW8/edit#gid=0", sheet = "LTC2")
+
+web_table <- ltc2 %>%
+  ungroup() %>%
+  filter(max_date_ind == "Yes" & Data_Type == "Cumulative") %>%
+  select(State, state, death, totalDeathsAllLTC) %>%
+  mutate(`% of Deaths in LTCs` = totalDeathsAllLTC / death,
+         State = if_else(state == "VI", "US Virgin Islands", State),
+         State2 = if_else(totalDeathsAllLTC == 0, paste0(State,"*"), State)) %>%
+  rename(`Total COVID-19 Deaths` = death,
+         `Total Deaths in LTCs` = totalDeathsAllLTC) %>%
+  select(State2, everything()) %>%
+  select(-state, - State) %>%
+  rename(State = State2)
+
+
+```
