@@ -1,0 +1,94 @@
+---
+title: "hhs_hosp"
+author: "Conor Kelly"
+date: "8/18/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(jsonlite)
+library(tidyverse)
+library(lubridate)
+library(httr)
+library(rio)
+library(anytime)
+
+## region
+regions <- read_csv("https://raw.githubusercontent.com/cphalpert/census-regions/master/us%20census%20bureau%20regions%20and%20divisions.csv") %>%
+  select(Region, `State Code`) %>%
+  rename(state = `State Code`)
+
+## read data (downloaded for now, get API later)
+hhs_files <- list.files(pattern = "reported_hospital_utilization") 
+hhs <- tibble()  
+
+for(file_nm in hhs_files){
+    path_nm <- paste0(file_nm)
+    
+    tmp <- import(file_nm)
+    
+    # CREATE VARIABLE TRACKING WHERE THE DATA CAME FROM
+    tmp$file_nm <- file_nm
+    
+    hhs <- bind_rows(hhs, tmp)
+    rm(tmp)
+}
+
+## clean
+
+hhs_hosp <- hhs %>%
+  arrange(reporting_cutoff_start) %>%
+  mutate(date_of_report = str_replace(file_nm, "reported_hospital_utilization_", ""),
+         date_of_report = str_replace(date, ".csv", ""),
+         date_of_report = gsub("_.*","",date_of_report),
+         date_of_report = anydate(date),
+         reporting_cutoff_start = anydate(reporting_cutoff_start)) %>%
+  group_by(date, state) %>%
+  filter(inpatient_beds_used_covid == max(inpatient_beds_used_covid)) %>%
+   #filter(row_number() == 1) %>%
+  ungroup()
+
+ctp <- fromJSON("https://covidtracking.com/api/v1/states/daily.json") %>%
+  select(date, state, fips, hospitalizedIncrease, hospitalizedCurrently, inIcuCumulative, inIcuCurrently, onVentilatorCurrently, onVentilatorCumulative) %>%
+  mutate(date_of_report = anydate(date)) %>%
+  select(-date)
+
+
+df <- left_join(hhs_hosp, ctp, by = c("state", "date_of_report"))
+
+min_date <- min(df$date_of_report)
+
+sdevs <- df %>%
+  filter(!is.na(hospitalizedCurrently),
+         !is.na(inpatient_beds_used_covid),
+         date_of_report != "2020-08-06") %>%
+  group_by(date_of_report) %>%
+  summarise(hospitalizedCurrently = sum(hospitalizedCurrently),
+            inpatient_beds_used_covid = sum(inpatient_beds_used_covid)) %>%
+  summarise(sd_HHS = sd(inpatient_beds_used_covid),
+            sd_CTP = sd(hospitalizedCurrently),
+            avg_HHS = mean(inpatient_beds_used_covid),
+            avg_CTP = mean(hospitalizedCurrently))
+
+CTP_pre <- fromJSON("https://covidtracking.com/api/v1/states/daily.json") %>%
+  select(date, state, hospitalizedCurrently) %>%
+  mutate(date_of_report = anydate(date)) %>%
+  select(-date) %>%
+  filter(!is.na(hospitalizedCurrently),
+         date_of_report < min_date) %>%
+  group_by(date_of_report) %>%
+  summarise(hospitalizedCurrently = sum(hospitalizedCurrently)) %>%
+  summarise(sd_CTP = sd(hospitalizedCurrently),
+            avg_CTP = mean(hospitalizedCurrently))
+
+## export for Tableau
+export(df, "hhs_data.csv")
+
+## check whether state data got more jittery since the change-over
+
+
+
+```
+
