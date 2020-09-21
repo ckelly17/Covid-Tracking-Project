@@ -26,7 +26,9 @@ library(googlesheets4)
 gs4_auth(email = "conor.richard.kelly@gmail.com") # may need to run this directly from the console, not sure why
 
 ## read data from Google Sheets
-ltc2<- read_sheet("URL", sheet = "Publish Data", col_types = "c")
+ltc2_raw<- read_sheet("https://docs.google.com/spreadsheets/d/1-j5WJ4IrIEdqg_-BaF9_5mw124SbrMKMgl__gFHKrZY/edit?ts=5ef63635#gid=957451839", sheet = "Publish Data", col_types = "c")
+
+ltc2 <- ltc2_raw
 
 ## dates
 ltc2$Date <- anydate(as.character(ltc2$Date))
@@ -184,13 +186,15 @@ ltc2 <- ltc2 %>%
                        outbreak_deaths_flag = if_else(max_outbreak_deaths == totalDeathsAllLTC, 1, 0),
                        
                        # cumulative total deaths now includes the highest number of outbreak deaths listed if necessary (will need caveat)
-                       totalDeathsAllLTC = if_else(Data_Type == "Cumulative", totalDeathsAllLTC + max_outbreak_deaths, totalDeathsAllLTC))
+                       totalDeathsAllLTC = if_else(Data_Type == "Cumulative", totalDeathsAllLTC + max_outbreak_deaths, totalDeathsAllLTC),
+                       
+                       date_for_note = as.character(format(date, format = "%B %d %Y")),
+                       date_for_note = str_replace(date_for_note, " 2020", ", 2020"))
                        
 
 ## take out missing rows
 ltc2 <- ltc2 %>% filter(!is.na(date))
 
-al <- ltc2 %>%  filter(state == "AL") %>% select(state, date, Data_Type, totalDeathsAllLTC, max_outbreak_deaths, totalDeathsLTC, everything())
                         
 ## write to a new sheet
 sheet_write(ltc2, ss = "https://docs.google.com/spreadsheets/d/1Vgf7fZKPIdgSYFbTv-CoXknfEsGaPSjteqP2b1b9cW8/edit#gid=0", sheet = "LTC2")
