@@ -26,7 +26,7 @@ library(googlesheets4)
 gs4_auth(email = "conor.richard.kelly@gmail.com") # may need to run this directly from the console, not sure why
 
 ## read data from Google Sheets
-ltc2_raw<- read_sheet("https://docs.google.com/spreadsheets/d/1-j5WJ4IrIEdqg_-BaF9_5mw124SbrMKMgl__gFHKrZY/edit?ts=5ef63635#gid=957451839", sheet = "Publish Data", col_types = "c")
+ltc2_raw <- read_sheet("https://docs.google.com/spreadsheets/d/1-j5WJ4IrIEdqg_-BaF9_5mw124SbrMKMgl__gFHKrZY/edit?ts=5ef63635#gid=957451839", sheet = "Publish Data", col_types = "c")
 
 ltc2 <- ltc2_raw
 
@@ -37,7 +37,7 @@ ltc2$month <- month(ltc2$Date)
 
 ## fill in missing values with 0 and convert to numeric
 ltc2 <- ltc2 %>% mutate_if(is.character, ~replace(., is.na(.), 0))
-for (i in(5:72)) {
+for (i in(5:56)) {
   ltc2[[i]] <- sub(",", "", ltc2[[i]], fixed = TRUE)
   ltc2[[i]] <- as.numeric(ltc2[[i]])
 }
@@ -110,19 +110,9 @@ ltc2 <- ltc2 %>%
          
          
          # number of outbreak facilities
-         totalOutbrkFacAllLTC = OutbrkFac_alf + OutbrkFac_ltc + OutbrkFac_nh + OutbrkFac_other,
+         totalOutbrkFacAllLTC = OutbrkFac_alf + OutbrkFac_ltc + OutbrkFac_nh + OutbrkFac_other) %>%
          
-         # number tested at outbreak facilities
-         totalTestsConductedOutbrkFac = OutrkFacTestsConducted_ltc + OutrkFacTestsConducted_alf + OutrkFacTestsConducted_nh + OutrkFacTestsConducted_other,
-         
-         # number of residents tested overall
-         totalTestedResidentsAllLTC = TestedRes_ltc + TestedRes_nh + TestedRes_alf + TestedRes_other,
-         
-         # number of staff rested overall
-         totalTestedStaffAllLTC = TestedStaff_ltc + TestedStaff_nh + TestedStaff_alf + TestedStaff_other,
-         
-         # number of tested facilities
-         TotalTestedFacAllLTC = TestedFac_alf + TestedFac_ltc + TestedFac_nh + TestedFac_other) %>%
+        
          
          # get counts of increases in positives and deaths
           group_by(Data_Type, state) %>%
@@ -150,17 +140,7 @@ ltc2 <- ltc2 %>%
                  # change in outbreak facilities
                  changeOutbrkFac = if_else(obs == 1, totalOutbrkFacAllLTC, totalOutbrkFacAllLTC - lag(totalOutbrkFacAllLTC)),
                  
-                 # change in residents tested
-                 newTestedResidents = if_else(obs == 1, totalTestedResidentsAllLTC, totalTestedResidentsAllLTC - lag(totalTestedResidentsAllLTC)),
-                 
-                 # change in staff tested
-                 newTestedStaff = if_else(obs == 1, totalTestedStaffAllLTC, totalTestedStaffAllLTC - lag(totalTestedStaffAllLTC)),
-                 
-                 # change in outbreak tested
-                 changeTestsConductedOutbrk = if_else(obs == 1, totalTestsConductedOutbrkFac, totalTestsConductedOutbrkFac - lag(totalTestsConductedOutbrkFac)),
-                 
-                 # change in facilities tested
-                 newTestedFacAllLTC = if_else(obs == 1, TotalTestedFacAllLTC, TotalTestedFacAllLTC - lag(TotalTestedFacAllLTC)),
+                
                  
                  # indicator for whether it's the latest date for that state
                  max_date_ind = if_else(date == max(date), "Yes", "No")) %>%
@@ -190,10 +170,34 @@ ltc2 <- ltc2 %>%
                        
                        date_for_note = as.character(format(date, format = "%B %d %Y")),
                        date_for_note = str_replace(date_for_note, " 2020", ", 2020"))
-                       
+
+## max cases and deaths
+ltc2 <- ltc2 %>%
+  
+  group_by(state, Data_Type) %>%
+  mutate(newDeathsAllLTC2 = ifelse(obs == 1, 0, newDeathsAllLTC),
+         newPosAllLTC2 = ifelse(obs == 1, 0, newPosAllLTC),
+         
+         max_deaths = max(newDeathsAllLTC2, na.rm = TRUE),
+         max_cases = max(newPosAllLTC2, na.rm = TRUE),
+         
+         max_death_date = ifelse(max_deaths == newDeathsAllLTC2, date, 0),
+         max_death_date = max(max_death_date),
+         max_death_date = anydate(max_death_date),
+         
+         max_case_date = ifelse(max_cases == newPosAllLTC2, date, 0),
+         max_case_date = max(max_case_date),
+         max_case_date = anydate(max_case_date)) %>%
+  ungroup()
+
 
 ## take out missing rows
 ltc2 <- ltc2 %>% filter(!is.na(date))
+
+check <- ltc2 %>%
+  select(state, date, Data_Type, newPosAllLTC, totalPosAllLTC, newDeathsAllLTC, totalDeathsAllLTC) %>%
+  filter(Data_Type %in% "Aggregate") %>%
+  filter(date > "2020-09-01")
 
                         
 ## write to a new sheet
